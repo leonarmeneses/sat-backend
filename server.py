@@ -257,8 +257,8 @@ class SATClient:
                 for paquete_id in paquetes_ids:
                     try:
                         print(f"⬇️ Descargando paquete: {paquete_id}")
-                        # El método correcto es 'descargar' y devuelve el contenido del ZIP
-                        resultado = descarga.descargar(
+                        # El método correcto es 'descargar_paquete' (singular) según cfdiclient
+                        resultado = descarga.descargar_paquete(
                             self.token,
                             self.rfc,
                             paquete_id
