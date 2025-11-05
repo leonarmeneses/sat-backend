@@ -41,7 +41,7 @@ CORS(app,
          'https://meneseswebs.com',
          'https://www.meneseswebs.com',
          'https://generador.meneseswebs.com',
-         'https://leonarmeneses.pythonanywhere.com'
+         'https://sat-backend-jbmx.onrender.com'
      ],
      allow_headers=['Content-Type', 'Authorization'],
      methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
