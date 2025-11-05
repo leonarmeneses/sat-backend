@@ -242,28 +242,51 @@ class SATClient:
             
             descarga = DescargaMasiva(self.fiel)
             
-            # Intentar descargar los paquetes
+            # El método correcto en cfdiclient es 'descargar', no 'descargar_paquetes'
             try:
-                paquetes_descargados = descarga.descargar_paquetes(
-                    self.token,
-                    self.rfc,
-                    id_solicitud
-                )
-                
-                if paquetes_descargados:
-                    print(f"✅ Paquetes descargados exitosamente: {len(paquetes_descargados)}")
-                    return paquetes_descargados
-                else:
-                    print("⚠️ No se descargaron paquetes (respuesta vacía)")
+                # Obtener la lista de paquetes de la verificación
+                verificacion = self.verificar_solicitud(id_solicitud)
+                if not verificacion or 'paquetes' not in verificacion:
+                    print("⚠️ No hay paquetes disponibles para descargar")
                     return []
+                
+                paquetes_ids = verificacion['paquetes']
+                print(f"📦 Paquetes encontrados: {len(paquetes_ids)}")
+                
+                paquetes_descargados = []
+                for paquete_id in paquetes_ids:
+                    try:
+                        print(f"⬇️ Descargando paquete: {paquete_id}")
+                        # El método correcto es 'descargar' y devuelve el contenido del ZIP
+                        resultado = descarga.descargar(
+                            self.token,
+                            self.rfc,
+                            paquete_id
+                        )
+                        
+                        if resultado and 'paquete' in resultado:
+                            # El paquete viene en base64, necesitamos decodificarlo
+                            import base64
+                            paquete_b64 = resultado['paquete']
+                            paquete_bytes = base64.b64decode(paquete_b64)
+                            paquetes_descargados.append(paquete_bytes)
+                            print(f"✅ Paquete {paquete_id} descargado: {len(paquete_bytes)} bytes")
+                        else:
+                            print(f"⚠️ Paquete {paquete_id} sin contenido")
+                    except Exception as pe:
+                        print(f"❌ Error descargando paquete {paquete_id}: {pe}")
+                        continue
+                
+                print(f"✅ Total de paquetes descargados: {len(paquetes_descargados)}")
+                return paquetes_descargados
                     
             except AttributeError as ae:
-                print(f"⚠️ Error de atributo en descarga (puede que cfdiclient no tenga descargar_paquetes): {ae}")
-                print("ℹ️ Intentando método alternativo...")
-                # Retornar vacío por ahora, necesitamos verificar la API de cfdiclient
+                print(f"⚠️ Error de atributo en descarga: {ae}")
+                import traceback
+                traceback.print_exc()
                 return []
             except Exception as de:
-                print(f"❌ Error específico en descarga de paquetes: {de}")
+                print(f"❌ Error en descarga de paquetes: {de}")
                 import traceback
                 traceback.print_exc()
                 return []
@@ -385,6 +408,16 @@ def consultar_facturas():
         
         print(f"RFC: {rfc}, Tipo: {tipo_consulta}, Fechas: {fecha_inicial} - {fecha_final}")
         print(f"Usar datos guardados: {usar_datos_guardados}, Estado comprobante: {estado_comprobante}")
+        
+        # Validar que las fechas no sean iguales (SAT requiere rango válido)
+        if fecha_inicial and fecha_final and fecha_inicial >= fecha_final:
+            error_msg = 'La fecha inicial debe ser anterior a la fecha final. El SAT requiere un rango de fechas válido.'
+            print(f"❌ {error_msg}")
+            return jsonify({
+                'success': False,
+                'message': error_msg,
+                'sugerencia': 'Selecciona una fecha final que sea al menos 1 día después de la fecha inicial'
+            }), 400
         
         if not all([rfc, tipo_consulta, fecha_inicial, fecha_final]):
             missing = []
@@ -634,6 +667,18 @@ def consultar_facturas():
             print(f"⚠️ Código de estado no manejado: {cod_estatus}")
             print(f"⚠️ Mensaje: {mensaje}")
             print(f"⚠️ ID Solicitud: {id_solicitud}")
+            
+            # Código 5002 del SAT = Límite de solicitudes excedido
+            if cod_estatus == '5002':
+                return jsonify({
+                    'success': False,
+                    'error_limite': True,
+                    'message': 'Has excedido el límite de solicitudes permitidas por el SAT',
+                    'detalle': mensaje,
+                    'sugerencia': 'El SAT limita la cantidad de solicitudes por RFC. Este límite puede ser diario, mensual o de por vida dependiendo del tipo de cuenta.',
+                    'solicitud': solicitud,
+                    'cod_estatus': cod_estatus
+                }), 400
             
             # Código 404 del SAT = No hay facturas en el rango de fechas (respuesta legítima)
             if cod_estatus == '404':
