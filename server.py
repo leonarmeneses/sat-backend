@@ -952,8 +952,14 @@ def guardar_fiscales():
 def obtener_fiscales():
     """Obtener datos fiscales guardados del usuario"""
     try:
+        # Debug: Imprimir toda la sesión
+        print(f"🔍 DEBUG - Session completa: {dict(session)}")
+        print(f"🔍 DEBUG - Cookies recibidas: {request.cookies}")
+        print(f"🔍 DEBUG - Headers: {dict(request.headers)}")
+        
         # Verificar sesión
         if 'usuario_id' not in session:
+            print("❌ No hay usuario_id en sesión")
             return jsonify({
                 'success': False,
                 'message': 'Debes iniciar sesión'
