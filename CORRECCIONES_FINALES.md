@@ -98,9 +98,9 @@ paquetes_descargados = descarga.descargar_paquetes(
 
 #### Ahora (✅ Correcto):
 ```python
-# El método correcto en cfdiclient es 'descargar', no 'descargar_paquetes'
+# El método correcto en cfdiclient es 'descargar_paquete' (singular)
 for paquete_id in paquetes_ids:
-    resultado = descarga.descargar(
+    resultado = descarga.descargar_paquete(
         self.token,
         self.rfc,
         paquete_id
