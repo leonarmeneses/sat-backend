@@ -577,7 +577,8 @@ def consultar_facturas():
                     'solicitud': solicitud
                 })
         elif cod_estatus == '301':
-            # Error 301 - generalmente significa que no hay facturas o hay problemas con la consulta
+            # Error 301 - para recibidas significa hay facturas canceladas
+            # El SAT NO permite consultar facturas recibidas si hay canceladas en el rango
             tipo_texto = 'emitidas' if tipo_consulta == 'emitidas' else 'recibidas'
             
             print(f"⚠️ Error 301 recibido del SAT")
@@ -585,6 +586,20 @@ def consultar_facturas():
             print(f"⚠️ Estado comprobante enviado: {estado_comprobante}")
             print(f"⚠️ Tipo de consulta: {tipo_consulta}")
             
+            # Para facturas RECIBIDAS con error 301, significa que hay canceladas
+            # y el SAT no permite descargarlas junto con las vigentes
+            if tipo_consulta == 'recibidas':
+                return jsonify({
+                    'success': False,
+                    'error_301_recibidas': True,
+                    'message': 'El SAT no permite descargar facturas recibidas cuando hay facturas canceladas en el rango de fechas',
+                    'sugerencia': 'Intenta reducir el rango de fechas a períodos más pequeños (por ejemplo, un mes a la vez)',
+                    'detalle': mensaje,
+                    'solicitud': solicitud,
+                    'cod_estatus': cod_estatus
+                }), 400
+            
+            # Para emitidas, el error 301 puede significar sin facturas
             return jsonify({
                 'success': True,
                 'sin_facturas': True,
