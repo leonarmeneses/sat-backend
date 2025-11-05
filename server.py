@@ -3,10 +3,13 @@ from flask_cors import CORS
 from flask_session import Session
 import os
 from datetime import datetime, timedelta
-from cfdiclient import Autenticacion, SolicitaDescargaEmitidos, SolicitaDescargaRecibidos, VerificaSolicitudDescarga, Fiel
+from cfdiclient import Autenticacion, SolicitaDescargaEmitidos, SolicitaDescargaRecibidos, VerificaSolicitudDescarga, DescargaMasiva, Fiel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 import base64
+import zipfile
+import io
+import xml.etree.ElementTree as ET
 import database
 
 app = Flask(__name__)
@@ -227,6 +230,115 @@ class SATClient:
             import traceback
             traceback.print_exc()
             return None
+    
+    def descargar_paquetes(self, id_solicitud):
+        """Descarga los paquetes ZIP de una solicitud"""
+        try:
+            if not self.token:
+                if not self.autenticar():
+                    return None
+            
+            print(f"📦 Descargando paquetes para solicitud: {id_solicitud}")
+            
+            descarga = DescargaMasiva(self.fiel)
+            paquetes_descargados = descarga.descargar_paquetes(
+                self.token,
+                self.rfc,
+                id_solicitud
+            )
+            
+            print(f"✅ Paquetes descargados: {len(paquetes_descargados) if paquetes_descargados else 0}")
+            return paquetes_descargados
+            
+        except Exception as e:
+            print(f"❌ Error al descargar paquetes: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def parsear_facturas_de_zip(self, zip_data):
+        """Extrae y parsea las facturas de un archivo ZIP"""
+        facturas = []
+        try:
+            # Abrir el ZIP desde bytes
+            with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+                # Iterar sobre cada archivo XML en el ZIP
+                for filename in zip_file.namelist():
+                    if filename.endswith('.xml'):
+                        try:
+                            xml_content = zip_file.read(filename)
+                            factura = self.parsear_xml_factura(xml_content)
+                            if factura:
+                                facturas.append(factura)
+                        except Exception as e:
+                            print(f"⚠️ Error al parsear {filename}: {e}")
+                            continue
+        except Exception as e:
+            print(f"❌ Error al abrir ZIP: {e}")
+        
+        return facturas
+    
+    def parsear_xml_factura(self, xml_content):
+        """Parsea un XML de factura y extrae la información principal"""
+        try:
+            # Parsear el XML
+            root = ET.fromstring(xml_content)
+            
+            # Namespaces del SAT
+            ns = {
+                'cfdi': 'http://www.sat.gob.mx/cfd/4',
+                'cfdi3': 'http://www.sat.gob.mx/cfd/3',
+                'tfd': 'http://www.sat.gob.mx/TimbreFiscalDigital'
+            }
+            
+            # Intentar con namespace 4.0 primero, luego 3.3
+            comprobante = root
+            
+            # Extraer datos del comprobante
+            fecha = comprobante.get('Fecha', '')
+            folio = comprobante.get('Folio', 'N/A')
+            serie = comprobante.get('Serie', '')
+            total = comprobante.get('Total', '0')
+            subtotal = comprobante.get('SubTotal', '0')
+            moneda = comprobante.get('Moneda', 'MXN')
+            tipo_comprobante = comprobante.get('TipoDeComprobante', 'I')
+            
+            # Emisor
+            emisor = comprobante.find('cfdi:Emisor', ns) or comprobante.find('cfdi3:Emisor', ns)
+            rfc_emisor = emisor.get('Rfc', '') if emisor is not None else ''
+            nombre_emisor = emisor.get('Nombre', '') if emisor is not None else ''
+            
+            # Receptor
+            receptor = comprobante.find('cfdi:Receptor', ns) or comprobante.find('cfdi3:Receptor', ns)
+            rfc_receptor = receptor.get('Rfc', '') if receptor is not None else ''
+            nombre_receptor = receptor.get('Nombre', '') if receptor is not None else ''
+            
+            # Timbre Fiscal (UUID)
+            complemento = comprobante.find('.//cfdi:Complemento', ns) or comprobante.find('.//cfdi3:Complemento', ns)
+            uuid = ''
+            if complemento is not None:
+                timbre = complemento.find('tfd:TimbreFiscalDigital', ns)
+                if timbre is not None:
+                    uuid = timbre.get('UUID', '')
+            
+            return {
+                'uuid': uuid,
+                'fecha': fecha,
+                'serie': serie,
+                'folio': folio,
+                'rfcEmisor': rfc_emisor,
+                'nombreEmisor': nombre_emisor,
+                'rfcReceptor': rfc_receptor,
+                'nombreReceptor': nombre_receptor,
+                'subtotal': float(subtotal),
+                'total': float(total),
+                'moneda': moneda,
+                'tipoComprobante': tipo_comprobante
+            }
+            
+        except Exception as e:
+            print(f"❌ Error al parsear XML: {e}")
+            return None
 
 # Diccionario global para almacenar clientes SAT por RFC
 sat_clients = {}
@@ -381,11 +493,33 @@ def consultar_facturas():
             # Solicitud exitosa, verificar estado
             if id_solicitud:
                 verificacion = client.verificar_solicitud(id_solicitud)
+                
+                # Si la solicitud está lista (estado 3), descargar y parsear las facturas
+                facturas = []
+                if verificacion and verificacion.get('estado_solicitud') == '3':
+                    print(f"✅ Solicitud lista, descargando paquetes...")
+                    paquetes = client.descargar_paquetes(id_solicitud)
+                    
+                    if paquetes:
+                        print(f"📦 Procesando {len(paquetes)} paquetes...")
+                        for paquete_data in paquetes:
+                            try:
+                                # Cada paquete es un diccionario con la data del ZIP
+                                facturas_paquete = client.parsear_facturas_de_zip(paquete_data)
+                                facturas.extend(facturas_paquete)
+                                print(f"✅ Extraídas {len(facturas_paquete)} facturas del paquete")
+                            except Exception as e:
+                                print(f"⚠️ Error al procesar paquete: {e}")
+                                continue
+                        
+                        print(f"✅ Total de facturas parseadas: {len(facturas)}")
+                
                 return jsonify({
                     'success': True,
                     'solicitud': solicitud,
                     'verificacion': verificacion,
-                    'id_solicitud': id_solicitud
+                    'id_solicitud': id_solicitud,
+                    'facturas': facturas
                 })
             else:
                 return jsonify({
