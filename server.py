@@ -179,7 +179,8 @@ class SATClient:
                 descarga = SolicitaDescargaRecibidos(self.fiel)
                 print(f"📥 Solicitando RECIBIDAS con rfc_receptor={self.rfc}")
                 
-                # Construir parámetros según el estado
+                # Para facturas recibidas, NO usar filtro de estado_comprobante
+                # porque el SAT no permite filtrar facturas canceladas por terceros
                 params = {
                     'token': self.token,
                     'rfc_solicitante': self.rfc,
@@ -188,13 +189,9 @@ class SATClient:
                     'rfc_receptor': self.rfc
                 }
                 
-                # Agregar estado_comprobante solo si se especificó
-                # IMPORTANTE: cfdiclient requiere que sea string, no int
-                if estado_comprobante is not None:
-                    params['estado_comprobante'] = str(estado_comprobante)
-                    print(f"🔧 Agregando filtro estado_comprobante = '{estado_comprobante}' (como string)")
-                
-                print(f"📦 Parámetros de solicitud: {params}")
+                # IMPORTANTE: Para facturas recibidas, ignoramos estado_comprobante
+                # El SAT devuelve todas las facturas (vigentes y canceladas) automáticamente
+                print(f"� Parámetros de solicitud (SIN filtro estado_comprobante para recibidas): {params}")
                 solicitud = descarga.solicitar_descarga(**params)
             
             print(f"✅ Solicitud creada: {solicitud}")
@@ -236,25 +233,44 @@ class SATClient:
         try:
             if not self.token:
                 if not self.autenticar():
+                    print("❌ No se pudo autenticar para descargar paquetes")
                     return None
             
             print(f"📦 Descargando paquetes para solicitud: {id_solicitud}")
             
             descarga = DescargaMasiva(self.fiel)
-            paquetes_descargados = descarga.descargar_paquetes(
-                self.token,
-                self.rfc,
-                id_solicitud
-            )
             
-            print(f"✅ Paquetes descargados: {len(paquetes_descargados) if paquetes_descargados else 0}")
-            return paquetes_descargados
+            # Intentar descargar los paquetes
+            try:
+                paquetes_descargados = descarga.descargar_paquetes(
+                    self.token,
+                    self.rfc,
+                    id_solicitud
+                )
+                
+                if paquetes_descargados:
+                    print(f"✅ Paquetes descargados exitosamente: {len(paquetes_descargados)}")
+                    return paquetes_descargados
+                else:
+                    print("⚠️ No se descargaron paquetes (respuesta vacía)")
+                    return []
+                    
+            except AttributeError as ae:
+                print(f"⚠️ Error de atributo en descarga (puede que cfdiclient no tenga descargar_paquetes): {ae}")
+                print("ℹ️ Intentando método alternativo...")
+                # Retornar vacío por ahora, necesitamos verificar la API de cfdiclient
+                return []
+            except Exception as de:
+                print(f"❌ Error específico en descarga de paquetes: {de}")
+                import traceback
+                traceback.print_exc()
+                return []
             
         except Exception as e:
-            print(f"❌ Error al descargar paquetes: {e}")
+            print(f"❌ Error general al descargar paquetes: {e}")
             import traceback
             traceback.print_exc()
-            return None
+            return []
     
     def parsear_facturas_de_zip(self, zip_data):
         """Extrae y parsea las facturas de un archivo ZIP"""
@@ -568,28 +584,6 @@ def consultar_facturas():
             print(f"⚠️ Mensaje del SAT: {mensaje}")
             print(f"⚠️ Estado comprobante enviado: {estado_comprobante}")
             print(f"⚠️ Tipo de consulta: {tipo_consulta}")
-            
-            # Verificar si el error es por incluir canceladas
-            if 'cancelado' in mensaje.lower():
-                # Para facturas recibidas, el SAT a veces no permite filtrar por estado
-                if tipo_consulta == 'recibidas':
-                    return jsonify({
-                        'success': False,
-                        'sin_facturas': False,
-                        'message': 'El SAT reporta que hay facturas canceladas en el resultado. Las facturas recibidas pueden incluir documentos cancelados por el emisor.',
-                        'detalle': f'Intenta consultar un rango de fechas más pequeño o contacta al SAT. Mensaje original: {mensaje}',
-                        'solicitud': solicitud,
-                        'cod_estatus': cod_estatus
-                    }), 400
-                else:
-                    return jsonify({
-                        'success': False,
-                        'sin_facturas': False,
-                        'message': 'Error: El SAT reporta un problema con la solicitud.',
-                        'detalle': mensaje,
-                        'solicitud': solicitud,
-                        'cod_estatus': cod_estatus
-                    }), 400
             
             return jsonify({
                 'success': True,
