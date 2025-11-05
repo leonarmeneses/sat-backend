@@ -429,6 +429,18 @@ def consultar_facturas():
         elif cod_estatus == '301':
             # Error 301 - generalmente significa que no hay facturas o hay problemas con la consulta
             tipo_texto = 'emitidas' if tipo_consulta == 'emitidas' else 'recibidas'
+            
+            # Verificar si el error es por incluir canceladas
+            if 'cancelado' in mensaje.lower():
+                return jsonify({
+                    'success': False,
+                    'sin_facturas': False,
+                    'message': 'Error: El SAT no permite descargar facturas canceladas junto con vigentes. Por favor, selecciona solo "Vigentes" o solo "Canceladas".',
+                    'detalle': mensaje,
+                    'solicitud': solicitud,
+                    'cod_estatus': cod_estatus
+                }), 400
+            
             return jsonify({
                 'success': True,
                 'sin_facturas': True,
