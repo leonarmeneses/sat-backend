@@ -968,6 +968,24 @@ def obtener_fiscales():
         usuario_id = session['usuario_id']
         print(f"📊 Obteniendo datos fiscales para usuario {usuario_id}...")
         
+        # Debug: Verificar directamente en la BD
+        import sqlite3
+        print(f"🔍 DEBUG - Verificando BD directamente desde server.py")
+        print(f"🔍 DEBUG - DB_PATH: {database.DB_PATH}")
+        try:
+            conn = sqlite3.connect(database.DB_PATH, timeout=30)
+            cursor = conn.cursor()
+            cursor.execute('SELECT usuario_id, rfc, certificado_path FROM datos_fiscales')
+            todos_registros = cursor.fetchall()
+            print(f"🔍 DEBUG - TODOS los registros en datos_fiscales: {todos_registros}")
+            cursor.execute('SELECT usuario_id, rfc FROM datos_fiscales WHERE usuario_id = ?', (usuario_id,))
+            registros_usuario = cursor.fetchall()
+            print(f"🔍 DEBUG - Registros para usuario {usuario_id}: {registros_usuario}")
+            conn.close()
+        except Exception as db_error:
+            print(f"❌ DEBUG - Error verificando BD: {db_error}")
+        
+        print(f"🔍 DEBUG - Llamando a database.obtener_datos_fiscales({usuario_id})...")
         resultado = database.obtener_datos_fiscales(usuario_id)
         print(f"📊 Resultado de la consulta: {resultado}")
         
