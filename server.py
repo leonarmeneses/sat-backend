@@ -167,11 +167,13 @@ class SATClient:
                     'rfc_emisor': self.rfc
                 }
                 
-                # Agregar estado_comprobante solo si se especificó
-                # IMPORTANTE: cfdiclient requiere que sea string, no int
-                if estado_comprobante is not None:
-                    params['estado_comprobante'] = str(estado_comprobante)
-                    print(f"🔧 Agregando filtro estado_comprobante = '{estado_comprobante}' (como string)")
+                # IMPORTANTE: Para facturas EMITIDAS, SIEMPRE enviar estado_comprobante='1' (vigentes)
+                # Esto evita ambigüedades con el SAT y asegura respuestas más claras
+                # Si el usuario quiere canceladas, debe especificar '0' explícitamente
+                estado_final = estado_comprobante if estado_comprobante is not None else 1
+                params['estado_comprobante'] = str(estado_final)
+                estado_texto = "Vigentes" if estado_final == 1 else "Canceladas" if estado_final == 0 else "Todos"
+                print(f"🔧 Agregando filtro estado_comprobante = '{estado_final}' ({estado_texto})")
                 
                 print(f"📦 Parámetros de solicitud: {params}")
                 solicitud = descarga.solicitar_descarga(**params)
@@ -632,6 +634,18 @@ def consultar_facturas():
             print(f"⚠️ Código de estado no manejado: {cod_estatus}")
             print(f"⚠️ Mensaje: {mensaje}")
             print(f"⚠️ ID Solicitud: {id_solicitud}")
+            
+            # Código 404 del SAT = No hay facturas en el rango de fechas (respuesta legítima)
+            if cod_estatus == '404':
+                tipo_texto = 'emitidas' if tipo_consulta == 'emitidas' else 'recibidas'
+                return jsonify({
+                    'success': True,
+                    'sin_facturas': True,
+                    'message': f'No se encontraron facturas {tipo_texto} en el rango de fechas seleccionado',
+                    'detalle': 'El SAT confirmó que no existen facturas para este RFC en estas fechas',
+                    'solicitud': solicitud,
+                    'cod_estatus': cod_estatus
+                })
             
             # Si el mensaje indica que no hay datos, tratarlo como sin facturas
             if 'no se encontr' in mensaje.lower() or 'no existe' in mensaje.lower() or 'no hay' in mensaje.lower():
