@@ -332,10 +332,15 @@ class SATClient:
             # Timbre Fiscal (UUID)
             complemento = comprobante.find('.//cfdi:Complemento', ns) or comprobante.find('.//cfdi3:Complemento', ns)
             uuid = ''
+            fecha_cancelacion = None
             if complemento is not None:
                 timbre = complemento.find('tfd:TimbreFiscalDigital', ns)
                 if timbre is not None:
                     uuid = timbre.get('UUID', '')
+                    fecha_cancelacion = timbre.get('FechaCancelacion', None)
+            
+            # Determinar estado: si no tiene fecha de cancelación, está vigente
+            estado = 'Cancelado' if fecha_cancelacion else 'Vigente'
             
             return {
                 'uuid': uuid,
@@ -349,7 +354,9 @@ class SATClient:
                 'subtotal': float(subtotal),
                 'total': float(total),
                 'moneda': moneda,
-                'tipoComprobante': tipo_comprobante
+                'tipoComprobante': tipo_comprobante,
+                'estado': estado,
+                'fechaCancelacion': fecha_cancelacion
             }
             
         except Exception as e:
@@ -529,13 +536,25 @@ def consultar_facturas():
                                 continue
                         
                         print(f"✅ Total de facturas parseadas: {len(facturas)}")
+                        
+                        # Filtrar facturas canceladas - solo mostrar vigentes por defecto
+                        facturas_originales = len(facturas)
+                        facturas = [f for f in facturas if f.get('estado') == 'Vigente']
+                        facturas_canceladas = facturas_originales - len(facturas)
+                        
+                        print(f"📊 Facturas vigentes: {len(facturas)}")
+                        print(f"📊 Facturas canceladas (filtradas): {facturas_canceladas}")
                 
                 return jsonify({
                     'success': True,
                     'solicitud': solicitud,
                     'verificacion': verificacion,
                     'id_solicitud': id_solicitud,
-                    'facturas': facturas
+                    'facturas': facturas,
+                    'stats': {
+                        'vigentes': len(facturas),
+                        'canceladas_filtradas': facturas_canceladas if 'facturas_originales' in locals() else 0
+                    }
                 })
             else:
                 return jsonify({
