@@ -150,7 +150,8 @@ def guardar_datos_fiscales(usuario_id, rfc, certificado_data, llave_data, passwo
 def obtener_datos_fiscales(usuario_id, rfc=None):
     """Obtiene los datos fiscales de un usuario"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        print(f"🔍 DEBUG obtener_datos_fiscales - usuario_id: {usuario_id}, rfc: {rfc}")
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         cursor = conn.cursor()
         
         if rfc:
@@ -168,6 +169,14 @@ def obtener_datos_fiscales(usuario_id, rfc=None):
             ''', (usuario_id,))
         
         resultados = cursor.fetchall()
+        print(f"🔍 DEBUG - Resultados de la query: {resultados}")
+        print(f"🔍 DEBUG - Cantidad de resultados: {len(resultados)}")
+        
+        # Verificar qué hay en la tabla
+        cursor.execute('SELECT usuario_id, rfc FROM datos_fiscales')
+        todos = cursor.fetchall()
+        print(f"🔍 DEBUG - TODOS los registros en datos_fiscales: {todos}")
+        
         conn.close()
         
         if resultados:
@@ -179,10 +188,15 @@ def obtener_datos_fiscales(usuario_id, rfc=None):
                     'llave_path': row[2],
                     'password_encrypted': row[3]
                 })
+            print(f"✅ DEBUG - Datos encontrados: {datos}")
             return {'success': True, 'datos': datos if not rfc else datos[0]}
         else:
+            print(f"❌ DEBUG - No se encontraron datos fiscales para usuario_id={usuario_id}")
             return {'success': False, 'message': 'No se encontraron datos fiscales'}
     except Exception as e:
+        print(f"❌ DEBUG - Error en obtener_datos_fiscales: {e}")
+        import traceback
+        traceback.print_exc()
         return {'success': False, 'message': str(e)}
 
 # Inicializar la base de datos al importar el módulo
