@@ -430,22 +430,38 @@ def consultar_facturas():
             # Error 301 - generalmente significa que no hay facturas o hay problemas con la consulta
             tipo_texto = 'emitidas' if tipo_consulta == 'emitidas' else 'recibidas'
             
+            print(f"⚠️ Error 301 recibido del SAT")
+            print(f"⚠️ Mensaje del SAT: {mensaje}")
+            print(f"⚠️ Estado comprobante enviado: {estado_comprobante}")
+            print(f"⚠️ Tipo de consulta: {tipo_consulta}")
+            
             # Verificar si el error es por incluir canceladas
             if 'cancelado' in mensaje.lower():
-                return jsonify({
-                    'success': False,
-                    'sin_facturas': False,
-                    'message': 'Error: El SAT no permite descargar facturas canceladas junto con vigentes. Por favor, selecciona solo "Vigentes" o solo "Canceladas".',
-                    'detalle': mensaje,
-                    'solicitud': solicitud,
-                    'cod_estatus': cod_estatus
-                }), 400
+                # Para facturas recibidas, el SAT a veces no permite filtrar por estado
+                if tipo_consulta == 'recibidas':
+                    return jsonify({
+                        'success': False,
+                        'sin_facturas': False,
+                        'message': 'El SAT reporta que hay facturas canceladas en el resultado. Las facturas recibidas pueden incluir documentos cancelados por el emisor.',
+                        'detalle': f'Intenta consultar un rango de fechas más pequeño o contacta al SAT. Mensaje original: {mensaje}',
+                        'solicitud': solicitud,
+                        'cod_estatus': cod_estatus
+                    }), 400
+                else:
+                    return jsonify({
+                        'success': False,
+                        'sin_facturas': False,
+                        'message': 'Error: El SAT reporta un problema con la solicitud.',
+                        'detalle': mensaje,
+                        'solicitud': solicitud,
+                        'cod_estatus': cod_estatus
+                    }), 400
             
             return jsonify({
                 'success': True,
                 'sin_facturas': True,
                 'message': f'No tienes facturas {tipo_texto} en estas fechas',
-                'detalle': 'No se encontraron documentos fiscales en el período especificado',
+                'detalle': mensaje,
                 'solicitud': solicitud,
                 'cod_estatus': cod_estatus
             })
